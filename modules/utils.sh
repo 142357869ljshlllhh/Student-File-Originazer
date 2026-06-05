@@ -55,23 +55,127 @@ get_ext() {
     echo "${ext,,}"  # 转为小写
 }
 
-# 获取文件分类目录
-get_category_dir() {
+# 获取一级分类名称
+get_primary_category() {
     local ext="$1"
     for category in "${!FILE_TYPE_MAP[@]}"; do
         local exts="${FILE_TYPE_MAP[$category]}"
         if [[ " $exts " == *" $ext "* ]]; then
-            case "$category" in
-                "课件")   echo "$DIR_COURSEWARE"; return ;;
-                "代码")   echo "$DIR_CODE";       return ;;
-                "图片")   echo "$DIR_IMAGES";     return ;;
-                "压缩包") echo "$DIR_ARCHIVES";   return ;;
-                "视频")   echo "$DIR_VIDEOS";     return ;;
-                "音乐")   echo "$DIR_MUSIC";      return ;;
-            esac
+            echo "$category"
+            return
         fi
     done
-    echo "$DIR_OTHERS"
+    echo "其他"
+}
+
+# 获取一级分类目录
+get_category_dir() {
+    local ext="$1"
+    local category
+    category="$(get_primary_category "$ext")"
+
+    case "$category" in
+        "课件")   echo "$DIR_COURSEWARE" ;;
+        "代码")   echo "$DIR_CODE" ;;
+        "图片")   echo "$DIR_IMAGES" ;;
+        "压缩包") echo "$DIR_ARCHIVES" ;;
+        "视频")   echo "$DIR_VIDEOS" ;;
+        "音乐")   echo "$DIR_MUSIC" ;;
+        *)        echo "$DIR_OTHERS" ;;
+    esac
+}
+
+contains_keyword() {
+    local text="${1,,}"
+    shift
+
+    for keyword in "$@"; do
+        [ -z "$keyword" ] && continue
+        if [[ "$text" == *"${keyword,,}"* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+get_course_subcategory() {
+    local filename="$1"
+    local name_only="${filename%.*}"
+    local normalized="${name_only,,}"
+
+    if contains_keyword "$normalized" "${PAPER_KEYWORDS[@]}"; then
+        echo "论文"
+        return
+    fi
+
+    for course in "${COURSE_CATEGORY_ORDER[@]}"; do
+        local keywords="${COURSE_KEYWORD_MAP[$course]}"
+        read -r -a keyword_list <<< "$keywords"
+        if contains_keyword "$normalized" "${keyword_list[@]}"; then
+            echo "$course"
+            return
+        fi
+    done
+
+    echo "未分类"
+}
+
+get_code_fallback_subcategory() {
+    local ext="$1"
+
+    case "$ext" in
+        html|css|js|ts|jsx|tsx|vue) echo "Web开发" ;;
+        sql)                        echo "数据库" ;;
+        sh)                         echo "Shell脚本" ;;
+        java)                       echo "Java项目" ;;
+        py)                         echo "Python项目" ;;
+        c|cpp|go|rs)                echo "算法练习" ;;
+        *)                          echo "未分类" ;;
+    esac
+}
+
+get_code_subcategory() {
+    local file_path="$1"
+    local filename="$2"
+    local ext="$3"
+    local parent_dir
+    parent_dir="$(basename "$(dirname "$file_path")")"
+    local normalized="${filename,,} ${parent_dir,,}"
+
+    for direction in "${CODE_DIRECTION_ORDER[@]}"; do
+        local keywords="${CODE_DIRECTION_KEYWORD_MAP[$direction]}"
+        read -r -a keyword_list <<< "$keywords"
+        if contains_keyword "$normalized" "${keyword_list[@]}"; then
+            echo "$direction"
+            return
+        fi
+    done
+
+    get_code_fallback_subcategory "$ext"
+}
+
+get_classify_target_dir() {
+    local file_path="$1"
+    local filename
+    filename="$(basename "$file_path")"
+    local ext
+    ext="$(get_ext "$filename")"
+    local base_dir
+    base_dir="$(get_category_dir "$ext")"
+    local category
+    category="$(get_primary_category "$ext")"
+
+    case "$category" in
+        "课件")
+            echo "$base_dir/$(get_course_subcategory "$filename")"
+            ;;
+        "代码")
+            echo "$base_dir/$(get_code_subcategory "$file_path" "$filename" "$ext")"
+            ;;
+        *)
+            echo "$base_dir"
+            ;;
+    esac
 }
 
 # 人类可读的文件大小
@@ -169,6 +273,7 @@ show_banner() {
 safe_move() {
     local src="$1"
     local dst_dir="$2"
+    mkdir -p "$dst_dir"
     local filename
     filename="$(basename "$src")"
     local dst="$dst_dir/$filename"

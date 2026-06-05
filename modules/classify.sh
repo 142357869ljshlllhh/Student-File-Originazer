@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # 模块：文件智能分类 (classify.sh)
-# 功能：根据文件后缀自动归档到对应目录
+# 功能：先按后缀进行一级分类，再按规则进行二级归档
 # ============================================================
 
 source "$(dirname "$0")/utils.sh"
@@ -38,13 +38,12 @@ run_classify() {
 
         local filename
         filename="$(basename "$file")"
-        local ext
-        ext="$(get_ext "$filename")"
         local category_dir
-        category_dir="$(get_category_dir "$ext")"
+        category_dir="$(get_classify_target_dir "$file")"
+        local category_label="${category_dir#"$SFO_ROOT"/}"
 
         if [ "$dry_run" = true ]; then
-            print_info "[预览] $file -> $category_dir/"
+            print_info "[预览] $file -> $category_label/"
             ((total_moved++))
             continue
         fi
@@ -52,10 +51,10 @@ run_classify() {
         # 执行移动
         local new_path
         if new_path=$(safe_move "$file" "$category_dir"); then
-            print_success "$filename -> $(basename "$category_dir")/"
+            print_success "$filename -> $category_label/"
             log "INFO" "移动: $file -> $new_path"
             ((total_moved++))
-            classify_stats["$(basename "$category_dir")"]=$((${classify_stats["$(basename "$category_dir")"]:-0} + 1))
+            classify_stats["$category_label"]=$((${classify_stats["$category_label"]:-0} + 1))
         else
             print_error "移动失败: $filename"
             log "ERROR" "移动失败: $file"
@@ -99,6 +98,9 @@ show_rules() {
         printf "           后缀: %s\n" "${FILE_TYPE_MAP[$category]}"
     done
     printf "  %-8s -> %s\n" "其他" "$DIR_OTHERS"
+    echo
+    echo "  课件二级分类: 课程名 / 论文 / 未分类"
+    echo "  代码二级分类: Web开发 / 算法练习 / 数据库 / Shell脚本 / Java项目 / Python项目 / 未分类"
     echo "────────────────────────────────────────────"
 }
 
